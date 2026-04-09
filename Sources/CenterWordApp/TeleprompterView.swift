@@ -3,7 +3,7 @@ import SwiftUI
 struct TeleprompterView: View {
     @EnvironmentObject private var session: CenterWordSession
     @AppStorage(TeleprompterLogic.defaultWordsPerMinuteKey) private var storedDefaultWordsPerMinute = TeleprompterLogic.fallbackWordsPerMinute
-    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @AppStorage(TeleprompterLogic.onboardingCompletedKey) private var hasCompletedOnboarding = false
     @AppStorage("hasPromptedForAccessibility") private var hasPromptedForAccessibility = false
     @AppStorage(TeleprompterLogic.readerFontSizeKey) private var storedReaderFontSize = TeleprompterLogic.defaultReaderFontSize
     @AppStorage(TeleprompterLogic.readerFontStyleKey) private var storedReaderFontStyle = TeleprompterFontStyle.rounded.rawValue
@@ -20,81 +20,38 @@ struct TeleprompterView: View {
     @State private var currentWordIndex = 0
     @State private var isPlaying = false
     @State private var engine = TeleprompterEngine()
-    @State private var isPresentationMode = false
-    @State private var accessibilityPermissionGranted = SelectedTextCaptureService.accessibilityPermissionGranted()
+    @State private var permissionSnapshot = SelectedTextCaptureService.permissionSnapshot()
 
-    private let presentationLeadIn: TimeInterval = 0.35
-    private let presentationTrailingHold: TimeInterval = 0.2
     private let seekStepSeconds: TimeInterval = 5
 
     var body: some View {
         ZStack {
-            readerBackgroundChoice.color
+            Color(nsColor: .windowBackgroundColor)
                 .ignoresSafeArea()
 
-            if isPresentationMode {
-                Text(displayedWord)
-                    .font(readerFont(size: presentationFontSize))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.25)
-                    .foregroundStyle(readerTextColorChoice.color)
-                    .padding(48)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Current word")
-                    .accessibilityValue(displayedWord)
+            if shouldPresentSetupScreen {
+                setupScreen
             } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("CenterWord")
-                            .font(.title.bold())
-
-                        if shouldShowOnboarding {
-                            onboardingSection
-                        }
-
-                        Text("Paste long text here, then start, pause, resume, or jump around. Cmd+Option+S still opens the stripped-down fast reader.")
-                            .foregroundStyle(.secondary)
-
-                        TextEditor(text: $sourceText)
-                            .frame(minHeight: 240)
-                            .font(.body)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
-                            )
-                            .onChange(of: sourceText) {
-                                rebuildWords()
-                            }
-
-                        controlsSection
-                        readerPreviewSection
-                        infoStrip
-
-                        Divider()
-
-                        settingsSection
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(20)
-                }
+                dashboardScreen
             }
         }
         .frame(minWidth: 820, minHeight: 620)
         .onAppear {
             applyStoredDefaultWordsPerMinute()
-            refreshAccessibilityPermission()
-            maybePromptForAccessibilityPermission()
+            refreshPermissions()
+            syncOnboardingStateWithPermission()
+            maybePromptForPermissions()
         }
         .onDisappear {
             engine.stop()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            refreshAccessibilityPermission()
+            refreshPermissions()
+            syncOnboardingStateWithPermission()
         }
         .onReceive(session.$launchRequest.compactMap { $0 }) { request in
             applyLaunchRequest(request)
+            session.consumeLaunchRequest()
         }
         .alert("CenterWord", isPresented: errorAlertIsPresented) {
             Button("OK", role: .cancel) {
@@ -121,6 +78,26 @@ struct TeleprompterView: View {
         readerAllCaps ? currentWord.uppercased() : currentWord
     }
 
+    private var shouldPresentSetupScreen: Bool {
+        TeleprompterLogic.shouldPresentSetupScreen(
+            hasCompletedOnboarding: hasCompletedOnboarding,
+            permissionSnapshot: permissionSnapshot,
+            hotKeyStatus: session.hotKeyRegistrationStatus
+        )
+    }
+
+    private var shouldShowAccessibilityWarning: Bool {
+        TeleprompterLogic.shouldShowPermissionWarning(
+            hasCompletedOnboarding: hasCompletedOnboarding,
+            permissionSnapshot: permissionSnapshot,
+            hotKeyStatus: session.hotKeyRegistrationStatus
+        )
+    }
+
+    private var capabilityReady: Bool {
+        permissionSnapshot.allGranted && session.hotKeyRegistrationStatus.isRegistered
+    }
+
     private var readerFontStyleChoice: TeleprompterFontStyle {
         TeleprompterFontStyle(rawValue: storedReaderFontStyle) ?? .rounded
     }
@@ -145,10 +122,6 @@ struct TeleprompterView: View {
         return clampedSize
     }
 
-    private var presentationFontSize: Double {
-        min(readerFontSize * 1.45, 176)
-    }
-
     private var progressLabel: String {
         guard !words.isEmpty else {
             return "0 / 0"
@@ -166,14 +139,20 @@ struct TeleprompterView: View {
     }
 
     private var elapsedLabel: String {
-        formattedDuration(TeleprompterLogic.elapsedSeconds(currentIndex: currentWordIndex, wordsPerMinute: wordsPerMinute))
+        formattedDuration(
+            TeleprompterLogic.elapsedSeconds(
+                currentIndex: currentWordIndex,
+                tokens: words,
+                wordsPerMinute: wordsPerMinute
+            )
+        )
     }
 
     private var remainingLabel: String {
         formattedDuration(
             TeleprompterLogic.remainingSeconds(
                 currentIndex: currentWordIndex,
-                totalWords: words.count,
+                tokens: words,
                 wordsPerMinute: wordsPerMinute
             )
         )
@@ -245,55 +224,133 @@ struct TeleprompterView: View {
         }
     }
 
+    private var dashboardScreen: some View {
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("CenterWord")
+                    .font(.title.bold())
+
+                Text("Paste long text here, then start, pause, resume, or jump around. Cmd+Option+S still opens the stripped-down fast reader.")
+                    .foregroundStyle(.secondary)
+
+                if shouldShowAccessibilityWarning {
+                    accessibilityWarningSection
+                }
+
+                if let hotKeyStatusMessage = session.hotKeyStatusMessage {
+                    Text(hotKeyStatusMessage)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                TextEditor(text: $sourceText)
+                    .frame(minHeight: 240)
+                    .font(.body)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
+                    )
+                    .onChange(of: sourceText) {
+                        rebuildWords()
+                    }
+
+                controlsSection
+                readerPreviewSection
+                infoStrip
+
+                Divider()
+
+                settingsSection
+            }
+            .frame(maxWidth: 960, alignment: .leading)
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
     private var readerPreviewSection: some View {
         Text(displayedWord)
             .font(readerFont(size: readerFontSize))
-            .frame(maxWidth: .infinity, minHeight: max(220, readerFontSize * 2.6))
+            .frame(maxWidth: .infinity, minHeight: 320, maxHeight: 320)
             .multilineTextAlignment(.center)
             .lineLimit(2)
             .minimumScaleFactor(0.3)
             .padding(24)
-            .foregroundStyle(readerTextColorChoice.color)
-            .background(Color.white.opacity(0.04))
+            .foregroundStyle(Color(nsColor: .labelColor))
+            .background(Color(nsColor: .textBackgroundColor))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+            )
             .clipShape(.rect(cornerRadius: 14))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Current word")
             .accessibilityValue(displayedWord)
     }
 
-    private var shouldShowOnboarding: Bool {
-        !hasCompletedOnboarding || !accessibilityPermissionGranted
+    private var setupScreen: some View {
+        ScrollView(.vertical) {
+            VStack {
+                onboardingSection
+                    .frame(maxWidth: 680)
+                    .padding(24)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var onboardingSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Setup")
-                .font(.headline)
+                .font(.title.bold())
 
-            Text("To use Cmd+Option+S anywhere, CenterWord needs Accessibility access. macOS requires you to approve that yourself, but the buttons below take you straight to it.")
+            Text("Do this once, then the app drops into the normal reader screen.")
                 .foregroundStyle(.secondary)
 
+            Text("To use Cmd+Option+S anywhere, CenterWord needs the shortcut registered, synthetic copy access, and Accessibility fallback access.")
+                .foregroundStyle(.secondary)
+
+            permissionStatusRow(
+                title: "Global shortcut",
+                granted: permissionSnapshot.listenEvent && session.hotKeyRegistrationStatus.isRegistered,
+                detail: permissionSnapshot.listenEvent ? session.hotKeyRegistrationStatus.message : "Input Monitoring is required to detect Cmd+Option+S while CenterWord is in the background."
+            )
+
+            permissionStatusRow(
+                title: "Synthetic copy",
+                granted: permissionSnapshot.postEvent,
+                detail: "Required to send Cmd+C to the frontmost app and read the selected text."
+            )
+
+            permissionStatusRow(
+                title: "Accessibility fallback",
+                granted: permissionSnapshot.accessibility,
+                detail: "Used when direct selected-text access is available and as a fallback if copy fails."
+            )
+
+            Text(Bundle.main.bundleURL.path)
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+
             HStack(spacing: 12) {
-                Label(
-                    accessibilityPermissionGranted ? "Accessibility granted" : "Accessibility not granted yet",
-                    systemImage: accessibilityPermissionGranted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
-                )
-                .foregroundStyle(accessibilityPermissionGranted ? .green : .yellow)
+                Button("Prompt for Shortcut Access") {
+                    SelectedTextCaptureService.requestListenEventPermission()
+                    refreshPermissions()
+                }
 
-                Spacer()
+                Button("Prompt for Copy Access") {
+                    SelectedTextCaptureService.requestPostEventPermission()
+                    refreshPermissions()
+                }
 
-                Text(Bundle.main.bundleURL.path)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-
-            HStack(spacing: 12) {
-                Button("Prompt for Access") {
+                Button("Prompt for Accessibility") {
                     hasPromptedForAccessibility = true
                     SelectedTextCaptureService.promptForAccessibilityPermission()
-                    refreshAccessibilityPermission()
+                    refreshPermissions()
                 }
 
                 Button("Open Accessibility Settings") {
@@ -304,20 +361,57 @@ struct TeleprompterView: View {
                     revealAppInFinder()
                 }
 
-                Button(accessibilityPermissionGranted ? "Finish Setup" : "Check Again") {
-                    refreshAccessibilityPermission()
-                    if accessibilityPermissionGranted {
+                Button(capabilityReady ? "Finish Setup" : "Check Again") {
+                    refreshPermissions()
+                    if capabilityReady {
                         hasCompletedOnboarding = true
                     }
                 }
+                .keyboardShortcut(.defaultAction)
             }
 
-            Text("Install flow: open CenterWord once, click Prompt for Access, enable CenterWord in Accessibility, then come back and click Finish Setup.")
+            Text("Install flow: grant copy access, grant Accessibility, verify the shortcut row says ready, then click Finish Setup.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
         .padding(16)
-        .background(Color.white.opacity(0.06))
+        .background(Color(nsColor: .controlBackgroundColor))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+        )
+        .clipShape(.rect(cornerRadius: 12))
+    }
+
+    private var accessibilityWarningSection: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.yellow)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Hotkey capture permissions are incomplete")
+                    .font(.headline)
+
+                Text("The main reader still works, but Cmd+Option+S still needs shortcut registration, synthetic copy access, and Accessibility fallback to work reliably across apps.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Button("Open Accessibility Settings") {
+                openAccessibilitySettings()
+            }
+
+            Button("Reveal App in Finder") {
+                revealAppInFinder()
+            }
+        }
+        .padding(14)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.yellow.opacity(0.45), lineWidth: 1)
+        )
         .clipShape(.rect(cornerRadius: 12))
     }
 
@@ -362,6 +456,7 @@ struct TeleprompterView: View {
                         }
                     }
                     .pickerStyle(.menu)
+                    .frame(width: 170, alignment: .leading)
 
                     Picker("Weight", selection: $storedReaderFontWeight) {
                         ForEach(TeleprompterFontWeight.allCases) { weight in
@@ -369,16 +464,31 @@ struct TeleprompterView: View {
                         }
                     }
                     .pickerStyle(.menu)
+                    .frame(width: 170, alignment: .leading)
 
-                    Stepper(
-                        "Size \(Int(readerFontSize))",
-                        value: $storedReaderFontSize,
-                        in: 36...140,
-                        step: 4
-                    )
+                    HStack(spacing: 10) {
+                        Text("Size")
+                            .foregroundStyle(.secondary)
+
+                        Text("\(Int(readerFontSize))")
+                            .monospacedDigit()
+                            .frame(width: 36, alignment: .trailing)
+
+                        Stepper(
+                            "",
+                            value: $storedReaderFontSize,
+                            in: 36...140,
+                            step: 4
+                        )
+                        .labelsHidden()
+                        .fixedSize()
+                    }
+                    .frame(width: 120, alignment: .leading)
 
                     Toggle("ALL CAPS", isOn: $readerAllCaps)
                         .toggleStyle(.switch)
+
+                    Spacer()
                 }
 
                 HStack(spacing: 12) {
@@ -400,6 +510,42 @@ struct TeleprompterView: View {
 
                     Text("Preview updates live")
                         .foregroundStyle(.secondary)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Accessibility")
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 12) {
+                    Label(
+                        permissionSnapshot.accessibility ? "Accessibility granted" : "Accessibility not granted",
+                        systemImage: permissionSnapshot.accessibility ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+                    )
+                    .foregroundStyle(permissionSnapshot.accessibility ? .green : .yellow)
+
+                    Label(
+                        permissionSnapshot.listenEvent && session.hotKeyRegistrationStatus.isRegistered ? "Shortcut ready" : "Shortcut unavailable",
+                        systemImage: permissionSnapshot.listenEvent && session.hotKeyRegistrationStatus.isRegistered ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+                    )
+                    .foregroundStyle(permissionSnapshot.listenEvent && session.hotKeyRegistrationStatus.isRegistered ? .green : .yellow)
+
+                    Label(
+                        permissionSnapshot.postEvent ? "Copy granted" : "Copy not granted",
+                        systemImage: permissionSnapshot.postEvent ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+                    )
+                    .foregroundStyle(permissionSnapshot.postEvent ? .green : .yellow)
+
+                    Button("Check Again") {
+                        refreshPermissions()
+                        syncOnboardingStateWithPermission()
+                    }
+
+                    Button("Open Accessibility Settings") {
+                        openAccessibilitySettings()
+                    }
+
+                    Spacer()
                 }
             }
 
@@ -468,7 +614,10 @@ struct TeleprompterView: View {
             return
         }
 
-        engine.start(wordsPerMinute: wordsPerMinute) {
+        engine.start(
+            wordsPerMinute: wordsPerMinute,
+            intervalProvider: currentTokenInterval
+        ) {
             advanceWord()
         }
     }
@@ -500,7 +649,7 @@ struct TeleprompterView: View {
         isPlaying = true
         engine.start(
             wordsPerMinute: wordsPerMinute,
-            initialDelay: isPresentationMode ? presentationLeadIn : 0
+            intervalProvider: currentTokenInterval
         ) {
             advanceWord()
         }
@@ -532,7 +681,7 @@ struct TeleprompterView: View {
             currentIndex: currentWordIndex,
             bySeconds: seconds,
             wordsPerMinute: wordsPerMinute,
-            totalWords: words.count
+            tokens: words
         )
 
         if shouldResume {
@@ -542,13 +691,12 @@ struct TeleprompterView: View {
 
     private func advanceWord() -> Bool {
         guard !words.isEmpty else {
-            finishPresentationIfNeeded()
             return false
         }
 
         let nextIndex = currentWordIndex + 1
         guard nextIndex < words.count else {
-            finishPresentationIfNeeded()
+            pausePlayback()
             return false
         }
 
@@ -562,8 +710,6 @@ struct TeleprompterView: View {
         syncWPMFieldFromState()
         rebuildWords()
         currentWordIndex = 0
-        isPresentationMode = true
-        centerPresentationWindow()
         startPlayback()
     }
 
@@ -589,65 +735,6 @@ struct TeleprompterView: View {
         NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
     }
 
-    private func centerPresentationWindow() {
-        guard let window = NSApp.keyWindow ?? NSApp.windows.first else {
-            return
-        }
-
-        let targetSize = NSSize(width: 820, height: 420)
-        window.collectionBehavior.formUnion([
-            .moveToActiveSpace,
-            .canJoinAllSpaces,
-            .fullScreenAuxiliary,
-            .transient,
-            .ignoresCycle,
-        ])
-        window.level = .screenSaver
-        window.setContentSize(targetSize)
-        window.center()
-        revealPresentationWindow(window)
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-            revealPresentationWindow(window)
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-            revealPresentationWindow(window)
-        }
-    }
-
-    private func finishPresentationIfNeeded() {
-        pausePlayback()
-
-        guard isPresentationMode else {
-            return
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + presentationTrailingHold) {
-            isPresentationMode = false
-            hidePresentationWindow()
-        }
-    }
-
-    private func hidePresentationWindow() {
-        guard let window = NSApp.keyWindow ?? NSApp.windows.first else {
-            return
-        }
-
-        window.level = .normal
-        window.collectionBehavior.remove([.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle])
-        window.orderOut(nil)
-    }
-
-    private func revealPresentationWindow(_ window: NSWindow) {
-        NSApp.unhide(nil)
-        NSRunningApplication.current.activate(options: [.activateAllWindows])
-        NSApp.activate(ignoringOtherApps: true)
-        window.order(.above, relativeTo: 0)
-        window.makeKeyAndOrderFront(nil)
-        window.orderFrontRegardless()
-    }
-
     private func readerFont(size: Double) -> Font {
         .system(
             size: size,
@@ -667,16 +754,51 @@ struct TeleprompterView: View {
         !words.isEmpty && currentWordIndex >= words.count - 1
     }
 
-    private func refreshAccessibilityPermission() {
-        accessibilityPermissionGranted = SelectedTextCaptureService.accessibilityPermissionGranted()
+    private func currentTokenInterval() -> TimeInterval {
+        guard !words.isEmpty else {
+            return TeleprompterLogic.secondsPerUnit(wordsPerMinute: wordsPerMinute)
+        }
+
+        return TeleprompterLogic.displayDuration(
+            for: words[currentWordIndex],
+            wordsPerMinute: wordsPerMinute
+        )
     }
 
-    private func maybePromptForAccessibilityPermission() {
-        guard !hasPromptedForAccessibility, !accessibilityPermissionGranted else {
+    private func refreshPermissions() {
+        permissionSnapshot = SelectedTextCaptureService.permissionSnapshot()
+    }
+
+    private func maybePromptForPermissions() {
+        guard shouldPresentSetupScreen, !hasPromptedForAccessibility, !capabilityReady else {
             return
         }
 
         hasPromptedForAccessibility = true
+        SelectedTextCaptureService.requestListenEventPermission()
+        SelectedTextCaptureService.requestPostEventPermission()
         SelectedTextCaptureService.promptForAccessibilityPermission()
+        refreshPermissions()
+    }
+
+    private func syncOnboardingStateWithPermission() {
+        if capabilityReady {
+            hasCompletedOnboarding = true
+        }
+    }
+
+    @ViewBuilder
+    private func permissionStatusRow(title: String, granted: Bool, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label(
+                granted ? "\(title) granted" : "\(title) not granted",
+                systemImage: granted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+            )
+            .foregroundStyle(granted ? .green : .yellow)
+
+            Text(detail)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
     }
 }

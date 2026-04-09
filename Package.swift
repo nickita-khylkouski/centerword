@@ -12,6 +12,7 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "CenterWord",
+            dependencies: [],
             path: "Sources/CenterWordApp",
             linkerSettings: [
                 .linkedFramework("Carbon"),

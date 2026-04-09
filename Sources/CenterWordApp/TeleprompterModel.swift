@@ -3,15 +3,37 @@ import AppKit
 import ApplicationServices
 import SwiftUI
 
+struct CenterWordPermissionSnapshot: Equatable {
+    var accessibility: Bool
+    var listenEvent: Bool
+    var postEvent: Bool
+
+    var allGranted: Bool {
+        accessibility && listenEvent && postEvent
+    }
+}
+
+struct TeleprompterAppearance: Equatable {
+    let fontStyle: TeleprompterFontStyle
+    let fontWeight: TeleprompterFontWeight
+    let textColor: TeleprompterTextColorChoice
+    let backgroundColor: TeleprompterBackgroundChoice
+    let allCaps: Bool
+    let fontSize: Double
+}
+
 enum TeleprompterLogic {
     static let fallbackWordsPerMinute = 860
     static let defaultWordsPerMinuteKey = "defaultWordsPerMinute"
+    static let onboardingCompletedKey = "hasCompletedOnboarding"
     static let readerFontSizeKey = "readerFontSize"
     static let readerFontStyleKey = "readerFontStyle"
     static let readerFontWeightKey = "readerFontWeight"
     static let readerTextColorKey = "readerTextColor"
     static let readerBackgroundColorKey = "readerBackgroundColor"
     static let readerAllCapsKey = "readerAllCaps"
+    static let overlayWidthKey = "overlayWidth"
+    static let overlayHeightKey = "overlayHeight"
     static let defaultReaderFontSize = 72.0
 
     static func clampWordsPerMinute(_ value: Int) -> Int {
@@ -45,37 +67,125 @@ enum TeleprompterLogic {
         return max(1, Int(words.rounded()))
     }
 
+    static func durationUnits(for token: String) -> Double {
+        TeleprompterText.isFastSeparatorToken(token) ? 0.5 : 1.0
+    }
+
+    static func secondsPerUnit(wordsPerMinute: Int) -> TimeInterval {
+        60.0 / Double(clampWordsPerMinute(wordsPerMinute))
+    }
+
+    static func displayDuration(for token: String, wordsPerMinute: Int) -> TimeInterval {
+        durationUnits(for: token) * secondsPerUnit(wordsPerMinute: wordsPerMinute)
+    }
+
     static func seekIndex(
         currentIndex: Int,
         bySeconds seconds: TimeInterval,
         wordsPerMinute: Int,
-        totalWords: Int
+        tokens: [String]
     ) -> Int {
-        guard totalWords > 0 else {
+        guard !tokens.isEmpty else {
             return 0
         }
 
-        let step = wordsToSeek(forSeconds: abs(seconds), wordsPerMinute: wordsPerMinute)
-        let signedStep = seconds < 0 ? -step : step
-        return min(max(currentIndex + signedStep, 0), totalWords - 1)
+        let clampedIndex = min(max(currentIndex, 0), tokens.count - 1)
+        let targetUnits = abs(seconds) * Double(clampWordsPerMinute(wordsPerMinute)) / 60.0
+        guard targetUnits > 0 else {
+            return clampedIndex
+        }
+
+        if seconds < 0 {
+            var index = clampedIndex
+            var traversedUnits = 0.0
+
+            while index > 0, traversedUnits < targetUnits {
+                index -= 1
+                traversedUnits += durationUnits(for: tokens[index])
+            }
+
+            return index
+        }
+
+        var index = clampedIndex
+        var traversedUnits = 0.0
+
+        while index < tokens.count - 1, traversedUnits < targetUnits {
+            index += 1
+            traversedUnits += durationUnits(for: tokens[index])
+        }
+
+        return index
     }
 
-    static func elapsedSeconds(currentIndex: Int, wordsPerMinute: Int) -> TimeInterval {
-        let clampedIndex = max(currentIndex, 0)
-        return Double(clampedIndex) * 60.0 / Double(clampWordsPerMinute(wordsPerMinute))
-    }
-
-    static func remainingSeconds(currentIndex: Int, totalWords: Int, wordsPerMinute: Int) -> TimeInterval {
-        guard totalWords > 0 else {
+    static func elapsedSeconds(currentIndex: Int, tokens: [String], wordsPerMinute: Int) -> TimeInterval {
+        guard !tokens.isEmpty else {
             return 0
         }
 
-        let remainingWords = max(totalWords - currentIndex - 1, 0)
-        return Double(remainingWords) * 60.0 / Double(clampWordsPerMinute(wordsPerMinute))
+        let clampedIndex = min(max(currentIndex, 0), tokens.count)
+        let elapsedUnits = tokens.prefix(clampedIndex).reduce(0.0) { partialResult, token in
+            partialResult + durationUnits(for: token)
+        }
+        return elapsedUnits * secondsPerUnit(wordsPerMinute: wordsPerMinute)
+    }
+
+    static func remainingSeconds(currentIndex: Int, tokens: [String], wordsPerMinute: Int) -> TimeInterval {
+        guard !tokens.isEmpty else {
+            return 0
+        }
+
+        let startIndex = min(max(currentIndex + 1, 0), tokens.count)
+        let remainingUnits = tokens[startIndex...].reduce(0.0) { partialResult, token in
+            partialResult + durationUnits(for: token)
+        }
+        return remainingUnits * secondsPerUnit(wordsPerMinute: wordsPerMinute)
     }
 
     static func clampReaderFontSize(_ value: Double) -> Double {
         min(max(value, 36), 140)
+    }
+
+    static func shouldPresentSetupScreen(
+        hasCompletedOnboarding: Bool,
+        permissionSnapshot: CenterWordPermissionSnapshot,
+        hotKeyStatus: CenterWordHotKeyRegistrationStatus
+    ) -> Bool {
+        !hasCompletedOnboarding && (!permissionSnapshot.allGranted || !hotKeyStatus.isRegistered)
+    }
+
+    static func shouldShowPermissionWarning(
+        hasCompletedOnboarding: Bool,
+        permissionSnapshot: CenterWordPermissionSnapshot,
+        hotKeyStatus: CenterWordHotKeyRegistrationStatus
+    ) -> Bool {
+        hasCompletedOnboarding && (!permissionSnapshot.allGranted || !hotKeyStatus.isRegistered)
+    }
+
+    static func storedAppearance(userDefaults: UserDefaults = .standard) -> TeleprompterAppearance {
+        let fontStyle = TeleprompterFontStyle(
+            rawValue: userDefaults.string(forKey: readerFontStyleKey) ?? ""
+        ) ?? .rounded
+        let fontWeight = TeleprompterFontWeight(
+            rawValue: userDefaults.string(forKey: readerFontWeightKey) ?? ""
+        ) ?? .bold
+        let textColor = TeleprompterTextColorChoice(
+            rawValue: userDefaults.string(forKey: readerTextColorKey) ?? ""
+        ) ?? .paper
+        let backgroundColor = TeleprompterBackgroundChoice(
+            rawValue: userDefaults.string(forKey: readerBackgroundColorKey) ?? ""
+        ) ?? .charcoal
+        let allCaps = userDefaults.bool(forKey: readerAllCapsKey)
+        let fontSize = clampReaderFontSize(userDefaults.double(forKey: readerFontSizeKey) == 0 ? defaultReaderFontSize : userDefaults.double(forKey: readerFontSizeKey))
+
+        return TeleprompterAppearance(
+            fontStyle: fontStyle,
+            fontWeight: fontWeight,
+            textColor: textColor,
+            backgroundColor: backgroundColor,
+            allCaps: allCaps,
+            fontSize: fontSize
+        )
     }
 }
 
@@ -230,17 +340,73 @@ enum TeleprompterBackgroundChoice: String, CaseIterable, Identifiable {
 }
 
 enum CenterWordActivation {
+    static let revealCollectionBehavior: NSWindow.CollectionBehavior = [
+        .moveToActiveSpace,
+        .canJoinAllSpaces,
+        .fullScreenAuxiliary,
+    ]
+
     @MainActor
     static func revealApplication() {
+        CenterWordDiagnostics.record("activation_reveal_application begin")
+        NSApp.setActivationPolicy(.regular)
         NSApp.unhide(nil)
-        NSRunningApplication.current.activate(options: [.activateAllWindows])
+        NSApp.arrangeInFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        forceFrontmostAccessibility()
+        NSRunningApplication.current.activate(options: [.activateAllWindows])
+        CenterWordDiagnostics.record("activation_reveal_application end")
     }
 
-    private static func forceFrontmostAccessibility() {
-        let appElement = AXUIElementCreateApplication(ProcessInfo.processInfo.processIdentifier)
-        AXUIElementSetAttributeValue(appElement, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
+    @MainActor
+    static func reveal(window: NSWindow) {
+        CenterWordDiagnostics.record("activation_reveal_window begin")
+        if window is CenterWordOverlayPanel {
+            if window.isMiniaturized {
+                window.deminiaturize(nil)
+            }
+            window.level = .screenSaver
+            NSApp.setActivationPolicy(.regular)
+            CenterWordDiagnostics.record("activation_reveal_window overlay_unhide")
+            NSApp.unhide(nil)
+            CenterWordDiagnostics.record("activation_reveal_window overlay_make_key_and_front")
+            window.makeKeyAndOrderFront(nil)
+            CenterWordDiagnostics.record("activation_reveal_window overlay_order_front")
+            window.orderFrontRegardless()
+            CenterWordDiagnostics.record("activation_reveal_window overlay_order_above")
+            window.order(.above, relativeTo: 0)
+            CenterWordDiagnostics.record("activation_reveal_window overlay_activate_running_app")
+            NSRunningApplication.current.activate(options: [.activateAllWindows])
+            CenterWordDiagnostics.record("activation_reveal_window overlay_activate_appkit")
+            NSApp.activate(ignoringOtherApps: true)
+            CenterWordDiagnostics.record("activation_reveal_window overlay_arrange_in_front")
+            NSApp.arrangeInFront(nil)
+            CenterWordDiagnostics.record("activation_reveal_window overlay_end")
+            return
+        }
+
+        prepare(window: window)
+        NSApp.setActivationPolicy(.regular)
+        NSApp.unhide(nil)
+        window.orderFrontRegardless()
+        bringToFront(window)
+        NSRunningApplication.current.activate(options: [.activateAllWindows])
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.arrangeInFront(nil)
+        CenterWordDiagnostics.record("activation_reveal_window end")
+    }
+
+    @MainActor
+    static func prepare(window: NSWindow) {
+        if window.isMiniaturized {
+            window.deminiaturize(nil)
+        }
+        window.collectionBehavior.formUnion(revealCollectionBehavior)
+    }
+
+    @MainActor
+    static func bringToFront(_ window: NSWindow) {
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
     }
 }
 
@@ -252,18 +418,17 @@ struct TeleprompterLaunchRequest: Identifiable {
 
 @MainActor
 final class CenterWordSession: ObservableObject {
-    @Published private(set) var launchRequest: TeleprompterLaunchRequest?
     @Published var errorMessage: String?
+    @Published private(set) var hotKeyStatusMessage: String?
+    @Published private(set) var hotKeyRegistrationStatus: CenterWordHotKeyRegistrationStatus = .unavailable("Cmd+Option+S is not ready yet.")
+    @Published private(set) var launchRequest: TeleprompterLaunchRequest?
 
     var openMainWindow: (() -> Void)?
-    private let revealCollectionBehavior: NSWindow.CollectionBehavior = [
-        .moveToActiveSpace,
-        .canJoinAllSpaces,
-        .fullScreenAuxiliary,
-    ]
 
     func presentCapturedText(_ text: String, wordsPerMinute: Int) {
         errorMessage = nil
+        hotKeyStatusMessage = "Captured \(TeleprompterText.words(in: text).count) words"
+        CenterWordDiagnostics.record("session_present_captured_text words=\(TeleprompterText.words(in: text).count) wpm=\(wordsPerMinute)")
         launchRequest = TeleprompterLaunchRequest(
             text: text,
             wordsPerMinute: TeleprompterLogic.clampWordsPerMinute(wordsPerMinute)
@@ -273,11 +438,34 @@ final class CenterWordSession: ObservableObject {
 
     func presentError(_ message: String) {
         errorMessage = message
+        hotKeyStatusMessage = message
+        CenterWordDiagnostics.record("session_present_error \(message)")
         revealWindow()
+        NSApp.requestUserAttention(.criticalRequest)
+    }
+
+    func presentCaptureError(_ message: String) {
+        presentError(message)
     }
 
     func clearError() {
         errorMessage = nil
+    }
+
+    func consumeLaunchRequest() {
+        launchRequest = nil
+    }
+
+    func recordHotKeyStatus(_ message: String) {
+        hotKeyStatusMessage = message
+        CenterWordDiagnostics.record("session_hotkey_status \(message)")
+    }
+
+    func updateHotKeyRegistrationStatus(_ status: CenterWordHotKeyRegistrationStatus) {
+        hotKeyRegistrationStatus = status
+        if !status.isRegistered {
+            hotKeyStatusMessage = status.message
+        }
     }
 
     private func revealWindow() {
@@ -300,19 +488,9 @@ final class CenterWordSession: ObservableObject {
     }
 
     private func revealExistingWindows() {
-        activateApplication()
         for window in NSApp.windows {
-            if window.isMiniaturized {
-                window.deminiaturize(nil)
-            }
-            window.collectionBehavior.formUnion(revealCollectionBehavior)
-            window.makeKeyAndOrderFront(nil)
-            window.orderFrontRegardless()
+            CenterWordActivation.reveal(window: window)
         }
-    }
-
-    private func activateApplication() {
-        CenterWordActivation.revealApplication()
     }
 
     private func pruneRedundantWindows() {
@@ -334,6 +512,7 @@ final class TeleprompterEngine {
     func start(
         wordsPerMinute: Int,
         initialDelay: TimeInterval = 0,
+        intervalProvider: (@MainActor () -> TimeInterval)? = nil,
         tick: @escaping @MainActor () -> Bool
     ) {
         stop()
@@ -345,7 +524,11 @@ final class TeleprompterEngine {
             }
 
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(60.0 / Double(clampedWordsPerMinute)))
+                let interval = await MainActor.run {
+                    intervalProvider?() ?? TeleprompterLogic.secondsPerUnit(wordsPerMinute: clampedWordsPerMinute)
+                }
+
+                try? await Task.sleep(for: .seconds(interval))
 
                 if Task.isCancelled {
                     break

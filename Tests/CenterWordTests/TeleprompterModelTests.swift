@@ -9,6 +9,27 @@ final class TeleprompterModelTests: XCTestCase {
         )
     }
 
+    func testTokenizerSplitsCommonDelimiters() {
+        XCTAssertEqual(
+            TeleprompterText.words(in: "hello-hello /Users/nickita/Applications/CenterWord.app a+b foo_bar one,two|three"),
+            ["hello", "-", "hello", "/", "Users", "/", "nickita", "/", "Applications", "/", "CenterWord", ".", "app", "a", "+", "b", "foo", "_", "bar", "one", ",", "two", "|", "three"]
+        )
+    }
+
+    func testTokenizerKeepsApostrophesInsideWords() {
+        XCTAssertEqual(
+            TeleprompterText.words(in: "don't we’re it's"),
+            ["don't", "we’re", "it's"]
+        )
+    }
+
+    func testTokenizerTreatsStandaloneQuotesAsSeparateTokens() {
+        XCTAssertEqual(
+            TeleprompterText.words(in: "'hello' end/'start' a''b"),
+            ["'", "hello", "'", "end", "/", "'", "start", "'", "a", "'", "'", "b"]
+        )
+    }
+
     func testParseWordsPerMinuteFiltersAndClamps() {
         XCTAssertEqual(TeleprompterLogic.parseWordsPerMinute(from: "320"), 320)
         XCTAssertEqual(TeleprompterLogic.parseWordsPerMinute(from: "0"), 1)
@@ -39,33 +60,59 @@ final class TeleprompterModelTests: XCTestCase {
     }
 
     func testSeekIndexUsesSecondsAtCurrentSpeed() {
+        let tokens = Array(repeating: "word", count: 500)
         XCTAssertEqual(
-            TeleprompterLogic.seekIndex(currentIndex: 100, bySeconds: 5, wordsPerMinute: 240, totalWords: 500),
+            TeleprompterLogic.seekIndex(currentIndex: 100, bySeconds: 5, wordsPerMinute: 240, tokens: tokens),
             120
         )
         XCTAssertEqual(
-            TeleprompterLogic.seekIndex(currentIndex: 100, bySeconds: -5, wordsPerMinute: 240, totalWords: 500),
+            TeleprompterLogic.seekIndex(currentIndex: 100, bySeconds: -5, wordsPerMinute: 240, tokens: tokens),
             80
         )
     }
 
     func testSeekIndexClampsWithinBounds() {
+        let tokens = Array(repeating: "word", count: 40)
         XCTAssertEqual(
-            TeleprompterLogic.seekIndex(currentIndex: 2, bySeconds: -5, wordsPerMinute: 300, totalWords: 40),
+            TeleprompterLogic.seekIndex(currentIndex: 2, bySeconds: -5, wordsPerMinute: 300, tokens: tokens),
             0
         )
         XCTAssertEqual(
-            TeleprompterLogic.seekIndex(currentIndex: 38, bySeconds: 5, wordsPerMinute: 300, totalWords: 40),
+            TeleprompterLogic.seekIndex(currentIndex: 38, bySeconds: 5, wordsPerMinute: 300, tokens: tokens),
             39
         )
     }
 
     func testDurationHelpersUseCurrentSpeed() {
         XCTAssertEqual(TeleprompterLogic.wordsToSeek(forSeconds: 5, wordsPerMinute: 240), 20)
-        XCTAssertEqual(TeleprompterLogic.elapsedSeconds(currentIndex: 30, wordsPerMinute: 120), 15, accuracy: 0.001)
         XCTAssertEqual(
-            TeleprompterLogic.remainingSeconds(currentIndex: 30, totalWords: 61, wordsPerMinute: 120),
+            TeleprompterLogic.elapsedSeconds(
+                currentIndex: 30,
+                tokens: Array(repeating: "word", count: 61),
+                wordsPerMinute: 120
+            ),
             15,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            TeleprompterLogic.remainingSeconds(
+                currentIndex: 30,
+                tokens: Array(repeating: "word", count: 61),
+                wordsPerMinute: 120
+            ),
+            15,
+            accuracy: 0.001
+        )
+    }
+
+    func testSeparatorTokensUseHalfDuration() {
+        let tokens = ["Users", "/", "nickita"]
+
+        XCTAssertEqual(TeleprompterLogic.durationUnits(for: "/"), 0.5)
+        XCTAssertEqual(TeleprompterLogic.displayDuration(for: "/", wordsPerMinute: 120), 0.25, accuracy: 0.001)
+        XCTAssertEqual(
+            TeleprompterLogic.elapsedSeconds(currentIndex: 2, tokens: tokens, wordsPerMinute: 120),
+            0.75,
             accuracy: 0.001
         )
     }
@@ -74,6 +121,69 @@ final class TeleprompterModelTests: XCTestCase {
         XCTAssertEqual(TeleprompterLogic.clampReaderFontSize(12), 36)
         XCTAssertEqual(TeleprompterLogic.clampReaderFontSize(72), 72)
         XCTAssertEqual(TeleprompterLogic.clampReaderFontSize(300), 140)
+    }
+
+    func testSetupScreenOnlyAppearsUntilOnboardingIsComplete() {
+        let missingPermissionSnapshot = CenterWordPermissionSnapshot(
+            accessibility: false,
+            listenEvent: false,
+            postEvent: false
+        )
+        let grantedPermissionSnapshot = CenterWordPermissionSnapshot(
+            accessibility: true,
+            listenEvent: true,
+            postEvent: true
+        )
+
+        XCTAssertTrue(
+            TeleprompterLogic.shouldPresentSetupScreen(
+                hasCompletedOnboarding: false,
+                permissionSnapshot: missingPermissionSnapshot,
+                hotKeyStatus: .registered
+            )
+        )
+        XCTAssertFalse(
+            TeleprompterLogic.shouldPresentSetupScreen(
+                hasCompletedOnboarding: true,
+                permissionSnapshot: grantedPermissionSnapshot,
+                hotKeyStatus: .registered
+            )
+        )
+    }
+
+    func testPermissionWarningOnlyShowsAfterOnboardingIfPermissionIsMissing() {
+        let missingPermissionSnapshot = CenterWordPermissionSnapshot(
+            accessibility: true,
+            listenEvent: true,
+            postEvent: false
+        )
+        let grantedPermissionSnapshot = CenterWordPermissionSnapshot(
+            accessibility: true,
+            listenEvent: true,
+            postEvent: true
+        )
+
+        XCTAssertFalse(
+            TeleprompterLogic.shouldShowPermissionWarning(
+                hasCompletedOnboarding: false,
+                permissionSnapshot: missingPermissionSnapshot,
+                hotKeyStatus: .registered
+            )
+        )
+        XCTAssertTrue(
+            TeleprompterLogic.shouldShowPermissionWarning(
+                hasCompletedOnboarding: true,
+                permissionSnapshot: missingPermissionSnapshot,
+                hotKeyStatus: .registered
+            )
+        )
+        XCTAssertFalse(
+            TeleprompterLogic.shouldShowPermissionWarning(
+                hasCompletedOnboarding: true,
+                permissionSnapshot: grantedPermissionSnapshot,
+                hotKeyStatus: .registered
+            )
+        )
     }
 
     func testLaunchAgentConfigurationTargetsInstalledApp() {

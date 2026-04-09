@@ -1,15 +1,17 @@
 import SwiftUI
 
+@MainActor
 final class CenterWordApplicationDelegate: NSObject, NSApplicationDelegate {
-    var session: CenterWordSession?
+    let session = CenterWordSession()
 
     private let hotKeyMonitor = CenterWordHotKeyMonitor()
-    private let selectedTextCaptureService = SelectedTextCaptureService()
-    private var lastHotKeyPressAt = Date.distantPast
+    private lazy var overlayController = CenterWordOverlayController()
     private var allowsTermination = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        CenterWordDiagnostics.record("app_launch begin")
         if terminateIfDuplicateInstanceExists() {
+            CenterWordDiagnostics.record("app_launch duplicate_instance_exit")
             return
         }
 
@@ -17,11 +19,25 @@ final class CenterWordApplicationDelegate: NSObject, NSApplicationDelegate {
         LaunchAtLoginManager.ensureEnabled()
 
         hotKeyMonitor.onPress = { [weak self] in
-            Task { @MainActor in
-                self?.handleHotKeyPress()
+            self?.handleHotKeyPress()
+        }
+
+        let registrationStatus = hotKeyMonitor.install()
+        CenterWordDiagnostics.record("app_launch hotkey_status \(registrationStatus.message)")
+        Task { @MainActor [weak self] in
+            self?.session.updateHotKeyRegistrationStatus(registrationStatus)
+            if !registrationStatus.isRegistered {
+                self?.session.presentError(registrationStatus.message)
             }
         }
-        hotKeyMonitor.install()
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        let registrationStatus = hotKeyMonitor.refresh()
+        CenterWordDiagnostics.record("app_active hotkey_status \(registrationStatus.message)")
+        Task { @MainActor [weak self] in
+            self?.session.updateHotKeyRegistrationStatus(registrationStatus)
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -41,7 +57,7 @@ final class CenterWordApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        session?.openMainWindow?()
+        session.openMainWindow?()
         NSApp.activate(ignoringOtherApps: true)
         return true
     }
@@ -50,25 +66,43 @@ final class CenterWordApplicationDelegate: NSObject, NSApplicationDelegate {
         hotKeyMonitor.uninstall()
     }
 
-    @MainActor
     private func handleHotKeyPress() {
-        let now = Date()
-        guard now.timeIntervalSince(lastHotKeyPressAt) > 0.5 else {
+        CenterWordDiagnostics.record("hotkey_press accepted")
+        let wordsPerMinute = TeleprompterLogic.storedDefaultWordsPerMinute()
+
+        guard let clipboardText = currentClipboardText(),
+              !TeleprompterText.words(in: clipboardText).isEmpty else {
+            let message = "Clipboard does not currently contain readable text."
+            CenterWordDiagnostics.record("hotkey_press clipboard_failure empty_or_unreadable")
+            session.recordHotKeyStatus(message)
+            overlayController.presentError(message: message)
+            NSApp.requestUserAttention(.criticalRequest)
             return
         }
-        lastHotKeyPressAt = now
 
-        let result = selectedTextCaptureService.captureSelectedText(promptIfNeeded: true)
-
-        switch result {
-        case let .success(text):
-            session?.presentCapturedText(text, wordsPerMinute: TeleprompterLogic.storedDefaultWordsPerMinute())
-        case let .failure(error):
-            session?.presentError(error.localizedDescription)
-        }
+        let wordCount = TeleprompterText.words(in: clipboardText).count
+        CenterWordDiagnostics.record("hotkey_press clipboard_success words=\(wordCount) wpm=\(wordsPerMinute)")
+        session.recordHotKeyStatus("Showing clipboard at \(wordsPerMinute) WPM")
+        overlayController.present(text: clipboardText, wordsPerMinute: wordsPerMinute)
     }
 
-    @MainActor
+    private func currentClipboardText() -> String? {
+        let pasteboard = NSPasteboard.general
+
+        if let text = pasteboard.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !text.isEmpty {
+            return text
+        }
+
+        let objects = pasteboard.readObjects(forClasses: [NSString.self], options: nil) as? [NSString]
+        if let text = objects?.first?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !text.isEmpty {
+            return text
+        }
+
+        return nil
+    }
+
     private func terminateIfDuplicateInstanceExists() -> Bool {
         guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
             return false
@@ -93,16 +127,14 @@ final class CenterWordApplicationDelegate: NSObject, NSApplicationDelegate {
 @main
 struct CenterWordApplication: App {
     @NSApplicationDelegateAdaptor(CenterWordApplicationDelegate.self) private var appDelegate
-    @StateObject private var session = CenterWordSession()
 
     var body: some Scene {
         Window("CenterWord", id: "main") {
             TeleprompterView()
-                .environmentObject(session)
+                .environmentObject(appDelegate.session)
                 .background(
                     OpenWindowRegistrar { openMainWindow in
-                        appDelegate.session = session
-                        session.openMainWindow = openMainWindow
+                        appDelegate.session.openMainWindow = openMainWindow
                     }
                 )
         }

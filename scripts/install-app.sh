@@ -58,6 +58,9 @@ mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 cp "$EXECUTABLE_PATH" "$APP_DIR/Contents/MacOS/${APP_NAME}"
 chmod +x "$APP_DIR/Contents/MacOS/${APP_NAME}"
 cp "$ROOT_DIR/AppBundle/Info.plist" "$APP_DIR/Contents/Info.plist"
+if [[ -f "$ROOT_DIR/AppBundle/CenterWord.icns" ]]; then
+  cp "$ROOT_DIR/AppBundle/CenterWord.icns" "$APP_DIR/Contents/Resources/CenterWord.icns"
+fi
 
 mkdir -p "$LAUNCH_AGENT_DIR"
 cat > "$LAUNCH_AGENT_PATH" <<EOF

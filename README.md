@@ -1,117 +1,131 @@
 # CenterWord
 
-CenterWord is a small macOS speed-reading app.
+<p align="center">
+  <img src="./Assets/Brand/hero.svg" alt="CenterWord hero" width="900" />
+</p>
 
-It has two modes:
+<p align="center">
+  Clipboard-to-teleprompter utility for macOS.
+</p>
 
-- A normal app window where you can paste long text, change WPM, start, pause, restart, and jump backward or forward by 5 seconds.
-- A global hotkey mode where you highlight text in any app, press `Cmd+Option+S`, and CenterWord opens a stripped-down fast-reader view with one centered word at a time.
+<p align="center">
+  <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-0F172A?style=flat-square">
+  <img alt="Swift Package" src="https://img.shields.io/badge/SwiftPM-native-5AA7FF?style=flat-square">
+  <img alt="Global Shortcut" src="https://img.shields.io/badge/Shortcut-Cmd%2BOption%2BS-84E7D7?style=flat-square">
+</p>
 
-## Features
+CenterWord turns clipboard text into a floating teleprompter. Copy anything, press `Cmd+Option+S`, and a focused reader pops over your current app, starts playing immediately, remembers its size, and closes itself after the last token.
 
-- Paste or type long-form text directly into the app
-- Set a reading speed in words per minute
-- Start, pause, resume, and restart playback
-- Jump backward or forward by 5 seconds based on the current WPM
-- Show elapsed time, remaining time, and word progress
-- Capture selected text from other apps with `Cmd+Option+S`
-- First-run onboarding for Accessibility setup
-- Installs as a regular Dock app
+## What It Does
 
-## Requirements
+- Pops a floating teleprompter over your current workspace
+- Reads the latest clipboard text at your saved default WPM
+- Keeps punctuation and separators as visible tokens
+- Speeds separators like `/`, `-`, `+`, `_`, and `.` to 2x playback
+- Lets you resize the popup and remembers that size
+- Auto-closes about a second after the final token
+- Still includes a full main app window for paste/edit/start/pause/restart control
 
-- macOS 14+
-- Accessibility permission for cross-app text capture
+## Main Flows
+
+### Clipboard Teleprompter
+
+1. Copy any text.
+2. Press `Cmd+Option+S`.
+3. CenterWord opens the floating reader and starts playback.
+
+### Main App
+
+1. Paste or type long text into the editor.
+2. Set your WPM.
+3. Press `Start`.
+4. Use `Pause`, `Restart`, `Back 5s`, or `Forward 5s`.
+
+## Token Rules
+
+CenterWord does not throw away path and punctuation separators anymore.
+
+Examples:
+
+- `hello-hello` becomes `hello`, `-`, `hello`
+- `/Users/nickita/Applications/CenterWord.app` becomes `/`, `Users`, `/`, `nickita`, `/`, `Applications`, `/`, `CenterWord`, `.`, `app`
+- `don't` stays `don't`
+
+Kept inside words:
+
+- letters
+- numbers
+- `'`
+- `’`
+
+Shown as their own tokens:
+
+- `/`
+- `\`
+- `-`
+- `+`
+- `_`
+- `.`
+- `,`
+- `|`
+- `:`
+- `;`
+- `(`
+- `)`
+- `[`
+- `]`
+- `{`
+- `}`
+- `<`
+- `>`
+- `!`
+- `?`
+- `@`
+- `#`
+- `$`
+- `%`
+- `^`
+- `&`
+- `*`
+- `=`
 
 ## Local Development
 
-Run the app from source:
+Run from source:
 
 ```bash
-cd apps/centerword
+cd /Users/nickita/centerword
 swift run CenterWord
 ```
 
 Run tests:
 
 ```bash
-cd apps/centerword
+cd /Users/nickita/centerword
 swift test
 ```
 
-## Install
-
-Build, sign, install, and launch the app:
+Install the signed app locally:
 
 ```bash
-cd apps/centerword
+cd /Users/nickita/centerword
 ./scripts/install-app.sh
 ```
 
-That installs the app to:
+That installs to:
 
 ```text
 /Users/$USER/Applications/CenterWord.app
 ```
 
-## First-Run Setup
-
-CenterWord cannot auto-grant Accessibility permission because macOS requires the user to approve that manually.
-
-On first launch, the app shows a setup section with buttons to:
-
-- prompt for Accessibility access
-- open the correct macOS Accessibility settings pane
-- reveal the installed app in Finder
-- re-check whether permission has been granted
-
-Recommended first-run flow:
-
-1. Open `CenterWord`.
-2. Click `Prompt for Access`.
-3. Enable `CenterWord` in `System Settings > Privacy & Security > Accessibility`.
-4. Return to the app and click `Finish Setup`.
-
-## Using The Main App
-
-1. Paste text into the large editor.
-2. Enter a WPM value.
-3. Press `Start`.
-4. Use `Pause`, `Restart`, `Back 5s`, or `Forward 5s` as needed.
-
-The 5-second jump controls are time-based, not word-based. CenterWord converts 5 seconds at the current WPM into an approximate word jump.
-
-## Using The Global Hotkey
-
-1. Make sure `CenterWord` is running.
-2. Highlight text in another app.
-3. Press `Cmd+Option+S`.
-
-CenterWord will:
-
-- capture the selected text
-- bring its reader window forward
-- open the stripped-down one-word view
-- start playback at the saved default hotkey WPM
-
 ## Project Layout
 
 ```text
-apps/centerword/
-├── AppBundle/Info.plist
-├── Package.swift
-├── README.md
+centerword/
+├── AppBundle/
+├── Assets/
+│   └── Brand/
 ├── Sources/CenterWordApp/
-│   ├── CenterWordApplication.swift
-│   ├── CenterWordHotKeyMonitor.swift
-│   ├── LaunchAtLoginManager.swift
-│   ├── SelectedTextCaptureService.swift
-│   ├── TeleprompterModel.swift
-│   ├── TeleprompterText.swift
-│   └── TeleprompterView.swift
 ├── Tests/CenterWordTests/
-│   └── TeleprompterModelTests.swift
 └── scripts/
-    ├── install-app.sh
-    └── open-app.sh
 ```

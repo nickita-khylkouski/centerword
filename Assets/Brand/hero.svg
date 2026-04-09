@@ -1,0 +1,60 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="180" y1="120" x2="1390" y2="760" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B1220"/>
+      <stop offset="0.5" stop-color="#182438"/>
+      <stop offset="1" stop-color="#101A29"/>
+    </linearGradient>
+    <linearGradient id="card" x1="463" y1="140" x2="1090" y2="760" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#EEF2E8"/>
+      <stop offset="1" stop-color="#DCE3D3"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="291" y1="245" x2="873" y2="720" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#84E7D7"/>
+      <stop offset="1" stop-color="#5AA7FF"/>
+    </linearGradient>
+    <filter id="shadow" x="168" y="103" width="1264" height="694" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="18"/>
+      <feGaussianBlur stdDeviation="24"/>
+      <feComposite in2="hardAlpha" operator="out"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.0196078 0 0 0 0 0.0431373 0 0 0 0 0.0823529 0 0 0 0.34 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_0_1"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_0_1" result="shape"/>
+    </filter>
+  </defs>
+  <rect width="1600" height="900" rx="32" fill="url(#bg)"/>
+  <circle cx="1328" cy="162" r="174" fill="#1A2A40" fill-opacity="0.65"/>
+  <circle cx="242" cy="798" r="186" fill="#0F2131" fill-opacity="0.9"/>
+  <path d="M1166 124C1277 177 1352 296 1348 419" stroke="#8DDCC9" stroke-opacity="0.18" stroke-width="2"/>
+  <path d="M109 712C260 601 420 615 596 770" stroke="#7CA8FF" stroke-opacity="0.18" stroke-width="2"/>
+  <g filter="url(#shadow)">
+    <rect x="216" y="133" width="1168" height="598" rx="34" fill="#091320" fill-opacity="0.72"/>
+    <rect x="216" y="133" width="1168" height="598" rx="34" stroke="#B6C6BE" stroke-opacity="0.18" stroke-width="2"/>
+  </g>
+  <rect x="280" y="197" width="510" height="470" rx="32" fill="url(#card)"/>
+  <rect x="862" y="197" width="456" height="470" rx="32" fill="#111B29"/>
+  <rect x="905" y="242" width="268" height="28" rx="14" fill="#223246"/>
+  <rect x="905" y="300" width="228" height="22" rx="11" fill="#223246"/>
+  <rect x="905" y="342" width="192" height="22" rx="11" fill="#223246"/>
+  <rect x="905" y="405" width="332" height="144" rx="26" fill="#0B1220" stroke="#29435D" stroke-width="2"/>
+  <rect x="335" y="250" width="188" height="188" rx="44" fill="url(#accent)"/>
+  <path d="M388 302H468" stroke="#F6F8F1" stroke-width="18" stroke-linecap="round"/>
+  <path d="M388 344H496" stroke="#F6F8F1" stroke-width="18" stroke-linecap="round"/>
+  <path d="M388 386H452" stroke="#F6F8F1" stroke-width="18" stroke-linecap="round"/>
+  <circle cx="512" cy="390" r="46" fill="#0B1220"/>
+  <path d="M495 390H529" stroke="#F6F8F1" stroke-width="12" stroke-linecap="round"/>
+  <path d="M512 373V407" stroke="#F6F8F1" stroke-width="12" stroke-linecap="round"/>
+  <path d="M612 322C642 322 665 345 665 375C665 405 642 428 612 428C582 428 559 405 559 375C559 345 582 322 612 322Z" stroke="#0B1220" stroke-width="14"/>
+  <path d="M642 411L682 451" stroke="#0B1220" stroke-width="14" stroke-linecap="round"/>
+  <text x="334" y="518" fill="#101A29" font-family="SF Pro Display, Inter, Arial, sans-serif" font-size="66" font-weight="800">CenterWord</text>
+  <text x="334" y="568" fill="#435462" font-family="SF Pro Text, Inter, Arial, sans-serif" font-size="28" font-weight="500">Clipboard-to-teleprompter utility for macOS.</text>
+  <text x="334" y="611" fill="#435462" font-family="SF Pro Text, Inter, Arial, sans-serif" font-size="28" font-weight="500">Fast popup reader, saved sizing, smarter token timing.</text>
+  <text x="928" y="500" fill="#E9F1FF" font-family="SF Pro Display, Inter, Arial, sans-serif" font-size="126" font-weight="800">/</text>
+  <text x="1002" y="500" fill="#E9F1FF" font-family="SF Pro Display, Inter, Arial, sans-serif" font-size="116" font-weight="700">Users</text>
+  <text x="907" y="593" fill="#87B6FF" font-family="SF Mono, SFMono-Regular, Menlo, monospace" font-size="28" font-weight="500">Special tokens stay visible and move 2x faster.</text>
+  <rect x="903" y="594" width="329" height="2" fill="#29435D"/>
+  <rect x="905" y="620" width="80" height="18" rx="9" fill="#84E7D7"/>
+  <rect x="997" y="620" width="156" height="18" rx="9" fill="#5AA7FF"/>
+</svg>

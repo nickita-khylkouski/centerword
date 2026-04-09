@@ -8,6 +8,8 @@
 	<string>CenterWord</string>
 	<key>CFBundleExecutable</key>
 	<string>CenterWord</string>
+	<key>CFBundleIconFile</key>
+	<string>CenterWord</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.nickita.centerword</string>
 	<key>CFBundleInfoDictionaryVersion</key>

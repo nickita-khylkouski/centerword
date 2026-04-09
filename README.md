@@ -1,49 +1,87 @@
 # CenterWord
 
 <p align="center">
-  <img src="./Assets/Brand/hero.svg" alt="CenterWord hero" width="900" />
+  <img src="./Assets/Brand/hero.png" alt="CenterWord preview" width="980" />
 </p>
 
 <p align="center">
-  Clipboard-to-teleprompter utility for macOS.
+  A clipboard-to-teleprompter macOS app. Copy text, hit <code>Cmd+Option+S</code>, and a focused reader jumps to the front.
 </p>
 
 <p align="center">
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-0F172A?style=flat-square">
-  <img alt="Swift Package" src="https://img.shields.io/badge/SwiftPM-native-5AA7FF?style=flat-square">
-  <img alt="Global Shortcut" src="https://img.shields.io/badge/Shortcut-Cmd%2BOption%2BS-84E7D7?style=flat-square">
+  <img alt="Apple Silicon" src="https://img.shields.io/badge/Apple%20Silicon-arm64-84E7D7?style=flat-square">
+  <img alt="SwiftPM" src="https://img.shields.io/badge/SwiftPM-native-5AA7FF?style=flat-square">
+  <img alt="Shortcut" src="https://img.shields.io/badge/Shortcut-Cmd%2BOption%2BS-EAF2FF?style=flat-square">
 </p>
 
-CenterWord turns clipboard text into a floating teleprompter. Copy anything, press `Cmd+Option+S`, and a focused reader pops over your current app, starts playing immediately, remembers its size, and closes itself after the last token.
+CenterWord exists for one job: take text you already copied and put it into a fast, minimal popup reader without making you switch context or fight a big dashboard.
 
-## What It Does
+## Goal
 
-- Pops a floating teleprompter over your current workspace
-- Reads the latest clipboard text at your saved default WPM
-- Keeps punctuation and separators as visible tokens
-- Speeds separators like `/`, `-`, `+`, `_`, and `.` to 2x playback
-- Lets you resize the popup and remembers that size
-- Auto-closes about a second after the final token
-- Still includes a full main app window for paste/edit/start/pause/restart control
+- Copy text from anywhere on macOS.
+- Press `Cmd+Option+S`.
+- Get an instant teleprompter-style popup that starts reading immediately.
 
-## Main Flows
+The main app still exists for editing text, testing speeds, and adjusting appearance, but the product is built around the popup flow.
 
-### Clipboard Teleprompter
+## Install
 
-1. Copy any text.
-2. Press `Cmd+Option+S`.
-3. CenterWord opens the floating reader and starts playback.
+### Option 1: Download the app
 
-### Main App
+Download the latest release from GitHub:
 
-1. Paste or type long text into the editor.
-2. Set your WPM.
-3. Press `Start`.
-4. Use `Pause`, `Restart`, `Back 5s`, or `Forward 5s`.
+- [Latest Releases](https://github.com/nickita-khylkouski/centerword/releases/latest)
 
-## Token Rules
+Release assets include:
 
-CenterWord does not throw away path and punctuation separators anymore.
+- a signed `.app` bundle zipped for direct install
+- a signed `.dmg` for drag-and-drop install
+
+### Option 2: Install from npm
+
+```bash
+npx centerword-app
+```
+
+That installer downloads the latest release and installs `CenterWord.app` into:
+
+```text
+~/Applications/CenterWord.app
+```
+
+### Option 3: Build locally
+
+```bash
+git clone https://github.com/nickita-khylkouski/centerword.git
+cd centerword
+./scripts/install-app.sh release
+```
+
+## First Run
+
+CenterWord is clipboard-first. The shipped shortcut flow only needs **Input Monitoring** so macOS will let the app detect `Cmd+Option+S` globally.
+
+First-run checklist:
+
+1. Open CenterWord once.
+2. Grant **Input Monitoring** when prompted.
+3. Copy text.
+4. Press `Cmd+Option+S`.
+
+If the popup ever does not appear, the full app still opens normally and shows the shortcut status.
+
+## What Makes It Useful
+
+- Popup teleprompter comes to the front and starts automatically
+- Popup is resizable and remembers the size you leave it at
+- Popup closes itself about a second after the final token
+- Main window still supports paste, edit, start, pause, restart, and seek
+- Saved default WPM is reused for the global shortcut flow
+
+## Token Behavior
+
+CenterWord intentionally keeps separators visible instead of collapsing them away.
 
 Examples:
 
@@ -51,71 +89,26 @@ Examples:
 - `/Users/nickita/Applications/CenterWord.app` becomes `/`, `Users`, `/`, `nickita`, `/`, `Applications`, `/`, `CenterWord`, `.`, `app`
 - `don't` stays `don't`
 
-Kept inside words:
-
-- letters
-- numbers
-- `'`
-- `’`
-
-Shown as their own tokens:
-
-- `/`
-- `\`
-- `-`
-- `+`
-- `_`
-- `.`
-- `,`
-- `|`
-- `:`
-- `;`
-- `(`
-- `)`
-- `[`
-- `]`
-- `{`
-- `}`
-- `<`
-- `>`
-- `!`
-- `?`
-- `@`
-- `#`
-- `$`
-- `%`
-- `^`
-- `&`
-- `*`
-- `=`
+Separator tokens such as `/`, `-`, `+`, `_`, and `.` still show up, but they move at **2x speed** so paths and structured strings stay readable without feeling slow.
 
 ## Local Development
 
 Run from source:
 
 ```bash
-cd /Users/nickita/centerword
 swift run CenterWord
 ```
 
 Run tests:
 
 ```bash
-cd /Users/nickita/centerword
 swift test
 ```
 
-Install the signed app locally:
+Build release artifacts:
 
 ```bash
-cd /Users/nickita/centerword
-./scripts/install-app.sh
-```
-
-That installs to:
-
-```text
-/Users/$USER/Applications/CenterWord.app
+./scripts/package-release.sh
 ```
 
 ## Project Layout
@@ -123,9 +116,9 @@ That installs to:
 ```text
 centerword/
 ├── AppBundle/
-├── Assets/
-│   └── Brand/
+├── Assets/Brand/
 ├── Sources/CenterWordApp/
 ├── Tests/CenterWordTests/
+├── npm/
 └── scripts/
 ```

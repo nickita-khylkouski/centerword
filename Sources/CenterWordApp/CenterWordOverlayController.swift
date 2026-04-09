@@ -20,7 +20,7 @@ final class CenterWordOverlayState: ObservableObject {
     @Published var mode: CenterWordOverlayMode = .idle
 
     var close: (() -> Void)?
-    var openAccessibilitySettings: (() -> Void)?
+    var openShortcutSettings: (() -> Void)?
 }
 
 @MainActor
@@ -44,7 +44,7 @@ final class CenterWordOverlayController: NSObject, NSWindowDelegate {
         let parsedWords = TeleprompterText.words(in: text)
         guard !parsedWords.isEmpty else {
             CenterWordDiagnostics.record("overlay_present skipped_empty_text")
-            presentError(message: "No highlighted text was found in the frontmost app.")
+            presentError(message: "Clipboard does not currently contain readable text.")
             return
         }
 
@@ -87,7 +87,7 @@ final class CenterWordOverlayController: NSObject, NSWindowDelegate {
         currentWordIndex = 0
         currentWordsPerMinute = TeleprompterLogic.fallbackWordsPerMinute
         state.mode = .error(message: message)
-        state.subtitle = "CenterWord couldn't read selected text."
+        state.subtitle = "CenterWord couldn't read clipboard text."
         state.displayedWord = ""
         let overlayPanel = ensurePanel()
         configure(panel: overlayPanel)
@@ -132,8 +132,8 @@ final class CenterWordOverlayController: NSObject, NSWindowDelegate {
         panel.standardWindowButton(.zoomButton)?.isHidden = true
         CenterWordDiagnostics.record("overlay_ensure_panel configure_panel end")
         state.close = { [weak self] in self?.hide() }
-        state.openAccessibilitySettings = {
-            guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else {
+        state.openShortcutSettings = {
+            guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent") else {
                 return
             }
             NSWorkspace.shared.open(url)
@@ -298,7 +298,7 @@ private struct CenterWordOverlayView: View {
                             .font(.system(size: 44))
                             .foregroundStyle(.yellow)
 
-                        Text("Couldn't read selected text")
+                        Text("Couldn't read clipboard text")
                             .font(.title.bold())
                             .foregroundStyle(state.appearance.textColor.color)
 
@@ -309,8 +309,8 @@ private struct CenterWordOverlayView: View {
                             .frame(maxWidth: 640)
 
                         HStack(spacing: 12) {
-                            Button("Open Accessibility Settings") {
-                                state.openAccessibilitySettings?()
+                            Button("Open Input Monitoring Settings") {
+                                state.openShortcutSettings?()
                             }
                             .buttonStyle(.borderedProminent)
 

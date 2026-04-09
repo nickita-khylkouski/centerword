@@ -130,9 +130,9 @@ final class TeleprompterModelTests: XCTestCase {
             postEvent: false
         )
         let grantedPermissionSnapshot = CenterWordPermissionSnapshot(
-            accessibility: true,
+            accessibility: false,
             listenEvent: true,
-            postEvent: true
+            postEvent: false
         )
 
         XCTAssertTrue(
@@ -154,13 +154,13 @@ final class TeleprompterModelTests: XCTestCase {
     func testPermissionWarningOnlyShowsAfterOnboardingIfPermissionIsMissing() {
         let missingPermissionSnapshot = CenterWordPermissionSnapshot(
             accessibility: true,
-            listenEvent: true,
+            listenEvent: false,
             postEvent: false
         )
         let grantedPermissionSnapshot = CenterWordPermissionSnapshot(
-            accessibility: true,
+            accessibility: false,
             listenEvent: true,
-            postEvent: true
+            postEvent: false
         )
 
         XCTAssertFalse(
@@ -181,6 +181,29 @@ final class TeleprompterModelTests: XCTestCase {
             TeleprompterLogic.shouldShowPermissionWarning(
                 hasCompletedOnboarding: true,
                 permissionSnapshot: grantedPermissionSnapshot,
+                hotKeyStatus: .registered
+            )
+        )
+    }
+
+    func testClipboardWorkflowOnlyRequiresGlobalShortcutPermission() {
+        let shortcutReadySnapshot = CenterWordPermissionSnapshot(
+            accessibility: false,
+            listenEvent: true,
+            postEvent: false
+        )
+
+        XCTAssertFalse(
+            TeleprompterLogic.shouldPresentSetupScreen(
+                hasCompletedOnboarding: false,
+                permissionSnapshot: shortcutReadySnapshot,
+                hotKeyStatus: .registered
+            )
+        )
+        XCTAssertFalse(
+            TeleprompterLogic.shouldShowPermissionWarning(
+                hasCompletedOnboarding: true,
+                permissionSnapshot: shortcutReadySnapshot,
                 hotKeyStatus: .registered
             )
         )

@@ -8,8 +8,8 @@ struct CenterWordPermissionSnapshot: Equatable {
     var listenEvent: Bool
     var postEvent: Bool
 
-    var allGranted: Bool {
-        accessibility && listenEvent && postEvent
+    var clipboardWorkflowReady: Bool {
+        listenEvent
     }
 }
 
@@ -151,7 +151,7 @@ enum TeleprompterLogic {
         permissionSnapshot: CenterWordPermissionSnapshot,
         hotKeyStatus: CenterWordHotKeyRegistrationStatus
     ) -> Bool {
-        !hasCompletedOnboarding && (!permissionSnapshot.allGranted || !hotKeyStatus.isRegistered)
+        !hasCompletedOnboarding && (!permissionSnapshot.clipboardWorkflowReady || !hotKeyStatus.isRegistered)
     }
 
     static func shouldShowPermissionWarning(
@@ -159,7 +159,7 @@ enum TeleprompterLogic {
         permissionSnapshot: CenterWordPermissionSnapshot,
         hotKeyStatus: CenterWordHotKeyRegistrationStatus
     ) -> Bool {
-        hasCompletedOnboarding && (!permissionSnapshot.allGranted || !hotKeyStatus.isRegistered)
+        hasCompletedOnboarding && (!permissionSnapshot.clipboardWorkflowReady || !hotKeyStatus.isRegistered)
     }
 
     static func storedAppearance(userDefaults: UserDefaults = .standard) -> TeleprompterAppearance {

@@ -4,7 +4,7 @@ struct TeleprompterView: View {
     @EnvironmentObject private var session: CenterWordSession
     @AppStorage(TeleprompterLogic.defaultWordsPerMinuteKey) private var storedDefaultWordsPerMinute = TeleprompterLogic.fallbackWordsPerMinute
     @AppStorage(TeleprompterLogic.onboardingCompletedKey) private var hasCompletedOnboarding = false
-    @AppStorage("hasPromptedForAccessibility") private var hasPromptedForAccessibility = false
+    @AppStorage("hasPromptedForShortcutAccess") private var hasPromptedForShortcutAccess = false
     @AppStorage(TeleprompterLogic.readerFontSizeKey) private var storedReaderFontSize = TeleprompterLogic.defaultReaderFontSize
     @AppStorage(TeleprompterLogic.readerFontStyleKey) private var storedReaderFontStyle = TeleprompterFontStyle.rounded.rawValue
     @AppStorage(TeleprompterLogic.readerFontWeightKey) private var storedReaderFontWeight = TeleprompterFontWeight.bold.rawValue
@@ -57,8 +57,8 @@ struct TeleprompterView: View {
             Button("OK", role: .cancel) {
                 session.clearError()
             }
-            Button("Open Accessibility Settings") {
-                openAccessibilitySettings()
+            Button("Open Input Monitoring Settings") {
+                openInputMonitoringSettings()
                 session.clearError()
             }
         } message: {
@@ -95,7 +95,7 @@ struct TeleprompterView: View {
     }
 
     private var capabilityReady: Bool {
-        permissionSnapshot.allGranted && session.hotKeyRegistrationStatus.isRegistered
+        permissionSnapshot.clipboardWorkflowReady && session.hotKeyRegistrationStatus.isRegistered
     }
 
     private var readerFontStyleChoice: TeleprompterFontStyle {
@@ -306,28 +306,16 @@ struct TeleprompterView: View {
             Text("Setup")
                 .font(.title.bold())
 
-            Text("Do this once, then the app drops into the normal reader screen.")
+            Text("Do this once, then CenterWord becomes a one-keystroke clipboard reader.")
                 .foregroundStyle(.secondary)
 
-            Text("To use Cmd+Option+S anywhere, CenterWord needs the shortcut registered, synthetic copy access, and Accessibility fallback access.")
+            Text("CenterWord is clipboard-first now. Copy text anywhere, hit Cmd+Option+S, and the popup teleprompter comes to the front. The only required permission is Input Monitoring so the global shortcut can fire while another app is focused.")
                 .foregroundStyle(.secondary)
 
             permissionStatusRow(
                 title: "Global shortcut",
                 granted: permissionSnapshot.listenEvent && session.hotKeyRegistrationStatus.isRegistered,
                 detail: permissionSnapshot.listenEvent ? session.hotKeyRegistrationStatus.message : "Input Monitoring is required to detect Cmd+Option+S while CenterWord is in the background."
-            )
-
-            permissionStatusRow(
-                title: "Synthetic copy",
-                granted: permissionSnapshot.postEvent,
-                detail: "Required to send Cmd+C to the frontmost app and read the selected text."
-            )
-
-            permissionStatusRow(
-                title: "Accessibility fallback",
-                granted: permissionSnapshot.accessibility,
-                detail: "Used when direct selected-text access is available and as a fallback if copy fails."
             )
 
             Text(Bundle.main.bundleURL.path)
@@ -342,19 +330,8 @@ struct TeleprompterView: View {
                     refreshPermissions()
                 }
 
-                Button("Prompt for Copy Access") {
-                    SelectedTextCaptureService.requestPostEventPermission()
-                    refreshPermissions()
-                }
-
-                Button("Prompt for Accessibility") {
-                    hasPromptedForAccessibility = true
-                    SelectedTextCaptureService.promptForAccessibilityPermission()
-                    refreshPermissions()
-                }
-
-                Button("Open Accessibility Settings") {
-                    openAccessibilitySettings()
+                Button("Open Input Monitoring Settings") {
+                    openInputMonitoringSettings()
                 }
 
                 Button("Reveal App in Finder") {
@@ -370,7 +347,7 @@ struct TeleprompterView: View {
                 .keyboardShortcut(.defaultAction)
             }
 
-            Text("Install flow: grant copy access, grant Accessibility, verify the shortcut row says ready, then click Finish Setup.")
+            Text("Install flow: grant Input Monitoring, verify the shortcut row says ready, then click Finish Setup. After that, your daily flow is copy text and hit Cmd+Option+S.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -392,14 +369,14 @@ struct TeleprompterView: View {
                 Text("Hotkey capture permissions are incomplete")
                     .font(.headline)
 
-                Text("The main reader still works, but Cmd+Option+S still needs shortcut registration, synthetic copy access, and Accessibility fallback to work reliably across apps.")
+                Text("The main reader still works, but the clipboard popup still needs Input Monitoring permission so Cmd+Option+S can fire globally.")
                     .foregroundStyle(.secondary)
             }
 
             Spacer()
 
-            Button("Open Accessibility Settings") {
-                openAccessibilitySettings()
+            Button("Open Input Monitoring Settings") {
+                openInputMonitoringSettings()
             }
 
             Button("Reveal App in Finder") {
@@ -514,38 +491,29 @@ struct TeleprompterView: View {
             }
 
             VStack(alignment: .leading, spacing: 10) {
-                Text("Accessibility")
+                Text("Shortcut")
                     .foregroundStyle(.secondary)
 
                 HStack(spacing: 12) {
-                    Label(
-                        permissionSnapshot.accessibility ? "Accessibility granted" : "Accessibility not granted",
-                        systemImage: permissionSnapshot.accessibility ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
-                    )
-                    .foregroundStyle(permissionSnapshot.accessibility ? .green : .yellow)
-
                     Label(
                         permissionSnapshot.listenEvent && session.hotKeyRegistrationStatus.isRegistered ? "Shortcut ready" : "Shortcut unavailable",
                         systemImage: permissionSnapshot.listenEvent && session.hotKeyRegistrationStatus.isRegistered ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
                     )
                     .foregroundStyle(permissionSnapshot.listenEvent && session.hotKeyRegistrationStatus.isRegistered ? .green : .yellow)
 
-                    Label(
-                        permissionSnapshot.postEvent ? "Copy granted" : "Copy not granted",
-                        systemImage: permissionSnapshot.postEvent ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
-                    )
-                    .foregroundStyle(permissionSnapshot.postEvent ? .green : .yellow)
-
                     Button("Check Again") {
                         refreshPermissions()
                         syncOnboardingStateWithPermission()
                     }
 
-                    Button("Open Accessibility Settings") {
-                        openAccessibilitySettings()
+                    Button("Open Input Monitoring Settings") {
+                        openInputMonitoringSettings()
                     }
 
                     Spacer()
+
+                    Text("Cmd+Option+S reads the current clipboard. Accessibility is not required for the shipped flow.")
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -724,8 +692,8 @@ struct TeleprompterView: View {
         )
     }
 
-    private func openAccessibilitySettings() {
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else {
+    private func openInputMonitoringSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent") else {
             return
         }
         NSWorkspace.shared.open(url)
@@ -770,14 +738,12 @@ struct TeleprompterView: View {
     }
 
     private func maybePromptForPermissions() {
-        guard shouldPresentSetupScreen, !hasPromptedForAccessibility, !capabilityReady else {
+        guard shouldPresentSetupScreen, !hasPromptedForShortcutAccess, !capabilityReady else {
             return
         }
 
-        hasPromptedForAccessibility = true
+        hasPromptedForShortcutAccess = true
         SelectedTextCaptureService.requestListenEventPermission()
-        SelectedTextCaptureService.requestPostEventPermission()
-        SelectedTextCaptureService.promptForAccessibilityPermission()
         refreshPermissions()
     }
 

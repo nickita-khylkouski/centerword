@@ -12,11 +12,11 @@ enum SelectedTextCaptureError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .copyPermissionRequired:
-            return "CenterWord needs permission to send Cmd+C before it can capture highlighted text."
+            return "CenterWord needs permission to send Cmd+C before it can run the legacy selected-text flow."
         case .accessibilityPermissionRequired:
-            return "CenterWord needs Accessibility permission for the selected-text fallback."
+            return "CenterWord needs Accessibility permission for the legacy selected-text fallback."
         case .noSelectedTextFound:
-            return "No highlighted text was found in the frontmost app."
+            return "No readable selected text was found."
         }
     }
 }
